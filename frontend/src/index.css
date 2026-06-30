@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-dark-950 text-white antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #1a1a1a; }
+::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* Markdown content styling */
+.diary-content h1 { @apply text-2xl font-bold mb-4 mt-6; }
+.diary-content h2 { @apply text-xl font-bold mb-3 mt-5; }
+.diary-content h3 { @apply text-lg font-semibold mb-2 mt-4; }
+.diary-content p { @apply mb-3 leading-relaxed; }
+.diary-content ul { @apply list-disc pl-6 mb-3; }
+.diary-content ol { @apply list-decimal pl-6 mb-3; }
+.diary-content li { @apply mb-1; }
+.diary-content blockquote { @apply border-l-4 border-brand-500 pl-4 italic text-dark-300 mb-3; }
+.diary-content strong { @apply text-white font-semibold; }
+.diary-content em { @apply text-dark-200 italic; }
+
+/* AI analysis content */
+.ai-content { @apply bg-dark-800 rounded-xl p-6 border border-dark-600; }
+.ai-content h1, .ai-content h2, .ai-content h3 { @apply text-brand-400; }

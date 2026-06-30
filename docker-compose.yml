@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  doctor-daily:
+    build: .
+    container_name: doctor-daily
+    restart: unless-stopped
+    ports:
+      - "${PORT:-29876}:29876"
+    volumes:
+      - doctor-daily-data:/app/data
+    environment:
+      - PORT=29876
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - DB_PATH=/app/data/doctor_daily.db
+
+volumes:
+  doctor-daily-data:
