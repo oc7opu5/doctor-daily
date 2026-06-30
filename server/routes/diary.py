@@ -141,8 +141,8 @@ async def extract_transactions(entry_id: int, user: dict = Depends(get_current_u
     api_key = settings["api_key"] if settings else None
     
     try:
-        # Use organized content if available, otherwise raw
-        text_to_analyze = entry["organized_content"] or entry["raw_content"]
+        # Use raw content for extraction — organized prose hides the numbers
+        text_to_analyze = entry["raw_content"]
         transactions = await extract_transactions_from_text(text_to_analyze, api_key, provider)
         
         saved = []
