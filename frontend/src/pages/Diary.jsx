@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, Sparkles, Trash2, X, BookOpen } from 'lucide-react'
+import { Plus, Sparkles, Trash2, X, BookOpen, Check, RotateCcw, Pencil } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { listDiary, createDiary, deleteDiary, organizeDiary } from '../api/service'
+import { listDiary, createDiary, deleteDiary, organizeDiary, selectDiaryVersion, updateDiary } from '../api/service'
 
 export default function Diary() {
   const [entries, setEntries] = useState([])
@@ -11,6 +11,10 @@ export default function Diary() {
   const [loading, setLoading] = useState(false)
   const [organizingId, setOrganizingId] = useState(null)
   const [viewEntry, setViewEntry] = useState(null)
+  const [versions, setVersions] = useState(null) // 3 AI versions from organize
+  const [selectedVersion, setSelectedVersion] = useState(null)
+  const [editing, setEditing] = useState(null) // 'raw' | 'organized' | null
+  const [editContent, setEditContent] = useState('')
 
   useEffect(() => { listDiary().then(setEntries).catch(() => {}) }, [])
 
@@ -32,14 +36,45 @@ export default function Diary() {
 
   const handleOrganize = async (id) => {
     setOrganizingId(id)
+    setVersions(null)
+    setSelectedVersion(null)
     try {
       const updated = await organizeDiary(id)
       setEntries(entries.map(e => e.id === id ? updated : e))
-      if (viewEntry?.id === id) setViewEntry(updated)
+      setViewEntry(updated)
+      // Parse the 3 versions
+      if (updated.organized_versions) {
+        const parsed = JSON.parse(updated.organized_versions)
+        setVersions(parsed)
+      }
     } catch (err) {
       alert(err.message)
     } finally {
       setOrganizingId(null)
+    }
+  }
+
+  const handleSelectVersion = async (id, index) => {
+    setSelectedVersion(index)
+    try {
+      const updated = await selectDiaryVersion(id, index)
+      setEntries(entries.map(e => e.id === id ? updated : e))
+      setViewEntry(updated)
+      setVersions(null)
+      setSelectedVersion(null)
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  const handleKeepOriginal = async (id) => {
+    try {
+      const updated = await selectDiaryVersion(id, -1)
+      setEntries(entries.map(e => e.id === id ? updated : e))
+      setViewEntry(updated)
+      setVersions(null)
+    } catch (err) {
+      alert(err.message)
     }
   }
 
@@ -48,10 +83,34 @@ export default function Diary() {
     try {
       await deleteDiary(id)
       setEntries(entries.filter(e => e.id !== id))
-      if (viewEntry?.id === id) setViewEntry(null)
+      if (viewEntry?.id === id) { setViewEntry(null); setVersions(null) }
     } catch (err) {
       alert(err.message)
     }
+  }
+
+  const startEdit = (field) => {
+    setEditing(field)
+    setEditContent(field === 'raw' ? viewEntry.raw_content : (viewEntry.organized_content || ''))
+  }
+
+  const saveEdit = async () => {
+    if (!editContent.trim()) return
+    try {
+      const data = editing === 'raw' ? { raw_content: editContent } : { organized_content: editContent }
+      const updated = await updateDiary(viewEntry.id, data)
+      setEntries(entries.map(e => e.id === updated.id ? updated : e))
+      setViewEntry(updated)
+      setEditing(null)
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  const closeView = () => {
+    setViewEntry(null)
+    setVersions(null)
+    setEditing(null)
   }
 
   return (
@@ -106,46 +165,153 @@ export default function Diary() {
       {viewEntry && (
         <div className="fixed inset-0 bg-black/60 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
           <div className="bg-dark-900 border border-dark-700 w-full md:max-w-3xl md:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto p-5 md:p-6 space-y-4">
+            {/* Header */}
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg md:text-xl font-semibold text-white">Diary Entry</h2>
                 <p className="text-dark-400 text-xs md:text-sm">{new Date(viewEntry.created_at).toLocaleString()}</p>
               </div>
-              <button onClick={() => setViewEntry(null)} className="text-dark-400 hover:text-white p-1"><X size={22} /></button>
+              <button onClick={closeView} className="text-dark-400 hover:text-white p-1"><X size={22} /></button>
             </div>
 
-            {viewEntry.organized_content && (
-              <div className="ai-content">
-                <div className="flex items-center gap-2 text-brand-400 text-sm mb-3">
-                  <Sparkles size={16} /> AI Organized Version
+            {/* VERSION PICKER — show when we have 3 AI versions */}
+            {versions && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-brand-400 text-sm font-medium">
+                  <Sparkles size={16} /> Choose your favorite version
                 </div>
-                <div className="diary-content text-dark-100 text-sm md:text-base">
-                  <ReactMarkdown>{viewEntry.organized_content}</ReactMarkdown>
+                
+                <div className="space-y-2">
+                  {versions.map((v, i) => v && (
+                    <button
+                      key={i}
+                      onClick={() => handleSelectVersion(viewEntry.id, i)}
+                      className={`w-full text-left p-4 rounded-xl border transition-all ${
+                        selectedVersion === i
+                          ? 'border-brand-500 bg-brand-600/20'
+                          : 'border-dark-600 bg-dark-800 hover:border-dark-400 active:bg-dark-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-brand-400">Version {i + 1}</span>
+                        {selectedVersion === i ? (
+                          <span className="text-xs text-green-400 flex items-center gap-1"><Check size={12} /> Selected</span>
+                        ) : (
+                          <span className="text-xs text-dark-400">Tap to select</span>
+                        )}
+                      </div>
+                      <p className="text-dark-200 text-sm line-clamp-4">{v}</p>
+                    </button>
+                  ))}
                 </div>
+
+                <button
+                  onClick={() => handleKeepOriginal(viewEntry.id)}
+                  className="w-full p-3 rounded-xl border border-dark-600 bg-dark-800 hover:border-dark-400 active:bg-dark-700 text-left transition-all"
+                >
+                  <div className="flex items-center gap-2 text-dark-400 text-sm">
+                    <RotateCcw size={14} /> Keep my original version
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleOrganize(viewEntry.id)}
+                  disabled={organizingId === viewEntry.id}
+                  className="w-full py-2.5 bg-brand-600/20 text-brand-400 hover:bg-brand-600/30 rounded-lg transition-colors text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <RotateCcw size={14} />
+                  {organizingId === viewEntry.id ? 'Generating 3 new versions...' : 'Regenerate 3 versions'}
+                </button>
               </div>
             )}
 
-            <div className="bg-dark-800 rounded-xl p-4 border border-dark-600">
-              <p className="text-xs text-dark-400 mb-2">Your raw writing</p>
-              <p className="text-dark-200 whitespace-pre-wrap text-sm md:text-base">{viewEntry.raw_content}</p>
+            {/* ORGANIZED CONTENT — show when selected/exists and no version picker */}
+            {!versions && viewEntry.organized_content && (
+              <div className="ai-content relative group">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2 text-brand-400 text-sm">
+                    <Sparkles size={16} /> AI Organized
+                  </div>
+                  {editing !== 'organized' && (
+                    <button onClick={() => startEdit('organized')} className="text-dark-400 hover:text-white p-1 opacity-60 hover:opacity-100">
+                      <Pencil size={14} />
+                    </button>
+                  )}
+                </div>
+                {editing === 'organized' ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={editContent}
+                      onChange={e => setEditContent(e.target.value)}
+                      className="w-full h-64 px-4 py-3 bg-dark-900 border border-dark-600 rounded-lg text-dark-100 resize-none focus:border-brand-500 focus:outline-none text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={saveEdit} className="flex items-center gap-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm">
+                        <Check size={14} /> Save
+                      </button>
+                      <button onClick={() => setEditing(null)} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="diary-content text-dark-100 text-sm md:text-base">
+                    <ReactMarkdown>{viewEntry.organized_content}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* RAW CONTENT */}
+            <div className="bg-dark-800 rounded-xl p-4 border border-dark-600 relative">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-dark-400">Your raw writing</p>
+                {editing !== 'raw' && (
+                  <button onClick={() => startEdit('raw')} className="text-dark-400 hover:text-white p-1 opacity-60 hover:opacity-100">
+                    <Pencil size={14} />
+                  </button>
+                )}
+              </div>
+              {editing === 'raw' ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={editContent}
+                    onChange={e => setEditContent(e.target.value)}
+                    className="w-full h-48 px-4 py-3 bg-dark-900 border border-dark-600 rounded-lg text-dark-100 resize-none focus:border-brand-500 focus:outline-none text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={saveEdit} className="flex items-center gap-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm">
+                      <Check size={14} /> Save
+                    </button>
+                    <button onClick={() => setEditing(null)} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-dark-200 whitespace-pre-wrap text-sm md:text-base">{viewEntry.raw_content}</p>
+              )}
             </div>
 
-            <div className="flex gap-2 pb-4 md:pb-0">
-              <button
-                onClick={() => handleOrganize(viewEntry.id)}
-                disabled={organizingId === viewEntry.id}
-                className="flex items-center gap-2 px-4 py-2.5 bg-brand-600/20 text-brand-400 hover:bg-brand-600/30 rounded-lg transition-colors text-sm disabled:opacity-50"
-              >
-                <Sparkles size={16} />
-                {organizingId === viewEntry.id ? 'Organizing...' : viewEntry.organized_content ? 'Re-organize' : 'AI Organize'}
-              </button>
-              <button
-                onClick={() => handleDelete(viewEntry.id)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg transition-colors text-sm"
-              >
-                <Trash2 size={16} /> Delete
-              </button>
-            </div>
+            {/* ACTION BUTTONS */}
+            {!versions && (
+              <div className="flex flex-wrap gap-2 pb-4 md:pb-0">
+                <button
+                  onClick={() => handleOrganize(viewEntry.id)}
+                  disabled={organizingId === viewEntry.id}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-brand-600/20 text-brand-400 hover:bg-brand-600/30 rounded-lg transition-colors text-sm disabled:opacity-50"
+                >
+                  <Sparkles size={16} />
+                  {organizingId === viewEntry.id ? 'Generating 3 versions...' : viewEntry.organized_content ? 'Re-generate options' : 'AI Organize'}
+                </button>
+                <button
+                  onClick={() => handleDelete(viewEntry.id)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg transition-colors text-sm"
+                >
+                  <Trash2 size={16} /> Delete
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -162,7 +328,7 @@ export default function Diary() {
           entries.map(entry => (
             <div
               key={entry.id}
-              onClick={() => setViewEntry(entry)}
+              onClick={() => { setViewEntry(entry); setVersions(null) }}
               className="bg-dark-900 rounded-xl p-4 md:p-5 border border-dark-700 hover:border-dark-500 active:border-dark-400 cursor-pointer transition-colors"
             >
               <p className="text-dark-100 line-clamp-3 text-sm md:text-base">{entry.raw_content}</p>

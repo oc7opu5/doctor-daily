@@ -31,10 +31,12 @@ export const getDiary = (id) => request(`/diary/${id}`);
 export const updateDiary = (id, data) => request(`/diary/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteDiary = (id) => request(`/diary/${id}`, { method: 'DELETE' });
 export const organizeDiary = (id) => request(`/diary/${id}/organize`, { method: 'POST' });
+export const selectDiaryVersion = (id, versionIndex) => request(`/diary/${id}/select-version`, { method: 'POST', body: JSON.stringify({ version_index: versionIndex }) });
 
 // Finance
 export const listTransactions = () => request('/finance');
 export const createTransaction = (data) => request('/finance', { method: 'POST', body: JSON.stringify(data) });
+export const updateTransaction = (id, data) => request(`/finance/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteTransaction = (id) => request(`/finance/${id}`, { method: 'DELETE' });
 export const getFinanceSummary = () => request('/finance/summary');
 export const analyzeFinance = () => request('/finance/analyze', { method: 'POST' });

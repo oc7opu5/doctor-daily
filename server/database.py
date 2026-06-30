@@ -35,6 +35,7 @@ def init_db():
         user_id INTEGER NOT NULL,
         raw_content TEXT NOT NULL,
         organized_content TEXT,
+        organized_versions TEXT,
         mood TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

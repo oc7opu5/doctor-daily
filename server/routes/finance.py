@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from ..database import get_db
-from ..models import TransactionCreate, TransactionResponse
+from ..models import TransactionCreate, TransactionUpdate, TransactionResponse
 from ..auth import get_current_user
-from ..ai_providers import analyze_finance, get_financial_advice
+from ..ai_providers import analyze_finance, get_financial_advice, categorize_transaction
 
 router = APIRouter(prefix="/api/finance", tags=["finance"])
 
@@ -15,14 +15,71 @@ def list_transactions(user: dict = Depends(get_current_user)):
     return [TransactionResponse(**dict(r)) for r in rows]
 
 @router.post("", response_model=TransactionResponse)
-def create_transaction(data: TransactionCreate, user: dict = Depends(get_current_user)):
+async def create_transaction(data: TransactionCreate, user: dict = Depends(get_current_user)):
     conn = get_db()
+    
+    # Get AI settings
+    settings = conn.execute("SELECT * FROM user_settings WHERE user_id = ?", (user["id"],)).fetchone()
+    provider = settings["ai_provider"] if settings else "opencode"
+    api_key = settings["api_key"] if settings else None
+    
+    # Auto-categorize with AI if tx_type not specified
+    tx_type = data.tx_type
+    category = None
+    
+    if tx_type is None:
+        # Let AI decide the type and category
+        try:
+            result = await categorize_transaction(data.raw_description, data.amount, api_key, provider)
+            tx_type = result.get("tx_type", "expense")
+            category = result.get("category", "Other")
+        except Exception:
+            tx_type = "expense"
+            category = "Other"
+    else:
+        # User specified type, still categorize
+        try:
+            result = await categorize_transaction(data.raw_description, data.amount, api_key, provider)
+            category = result.get("category", "Other")
+        except Exception:
+            category = "Other"
+    
     cur = conn.execute(
-        "INSERT INTO finance_transactions (user_id, raw_description, amount, tx_type, transaction_date) VALUES (?, ?, ?, ?, ?)",
-        (user["id"], data.raw_description, data.amount, data.tx_type, data.transaction_date)
+        "INSERT INTO finance_transactions (user_id, raw_description, amount, tx_type, organized_category, transaction_date) VALUES (?, ?, ?, ?, ?, ?)",
+        (user["id"], data.raw_description, data.amount, tx_type, category, data.transaction_date)
     )
     tx_id = cur.lastrowid
     conn.commit()
+    tx = conn.execute("SELECT * FROM finance_transactions WHERE id = ?", (tx_id,)).fetchone()
+    conn.close()
+    return TransactionResponse(**dict(tx))
+
+@router.put("/{tx_id}", response_model=TransactionResponse)
+def update_transaction(tx_id: int, data: TransactionUpdate, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    tx = conn.execute("SELECT * FROM finance_transactions WHERE id = ? AND user_id = ?", (tx_id, user["id"])).fetchone()
+    if not tx:
+        conn.close()
+        raise HTTPException(404, "Transaction not found")
+    
+    updates = {}
+    if data.raw_description is not None:
+        updates["raw_description"] = data.raw_description
+    if data.amount is not None:
+        updates["amount"] = data.amount
+    if data.tx_type is not None:
+        updates["tx_type"] = data.tx_type
+    if data.organized_category is not None:
+        updates["organized_category"] = data.organized_category
+    if data.transaction_date is not None:
+        updates["transaction_date"] = data.transaction_date
+    
+    if updates:
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        vals = list(updates.values()) + [tx_id]
+        conn.execute(f"UPDATE finance_transactions SET {sets} WHERE id = ?", vals)
+        conn.commit()
+    
     tx = conn.execute("SELECT * FROM finance_transactions WHERE id = ?", (tx_id,)).fetchone()
     conn.close()
     return TransactionResponse(**dict(tx))
@@ -45,8 +102,8 @@ def get_summary(user: dict = Depends(get_current_user)):
     rows = conn.execute("SELECT * FROM finance_transactions WHERE user_id = ? ORDER BY transaction_date DESC", (user["id"],)).fetchall()
     conn.close()
     
-    total_expense = sum(r["amount"] for r in rows if r["tx_type"] == "expense")
-    total_income = sum(r["amount"] for r in rows if r["tx_type"] == "income")
+    total_expense = sum(r["amount"] for r in rows if r["tx_type"] in ("expense", "loan_given"))
+    total_income = sum(r["amount"] for r in rows if r["tx_type"] in ("income", "loan_received"))
     
     categories = {}
     for r in rows:
@@ -73,7 +130,7 @@ async def analyze_spending(user: dict = Depends(get_current_user)):
         raise HTTPException(400, "No transactions to analyze")
     
     tx_text = "\n".join([
-        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — ${r['amount']:.2f} ({r['tx_type']})"
+        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — ${r['amount']:.2f} ({r['tx_type']}) [{r['organized_category'] or 'Uncategorized'}]"
         for r in rows
     ])
     
@@ -97,7 +154,7 @@ async def ask_advice(question: str, user: dict = Depends(get_current_user)):
     conn.close()
     
     context = "\n".join([
-        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — ${r['amount']:.2f} ({r['tx_type']})"
+        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — ${r['amount']:.2f} ({r['tx_type']}) [{r['organized_category'] or 'Uncategorized'}]"
         for r in rows
     ]) if rows else "No transactions yet"
     

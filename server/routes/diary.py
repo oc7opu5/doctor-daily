@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
+import json
 from ..database import get_db
-from ..models import DiaryCreate, DiaryUpdate, DiaryResponse
+from ..models import DiaryCreate, DiaryUpdate, DiaryResponse, DiarySelectVersion
 from ..auth import get_current_user
-from ..ai_providers import reorganize_diary
+from ..ai_providers import reorganize_diary, reorganize_diary_variants
 
 router = APIRouter(prefix="/api/diary", tags=["diary"])
 
@@ -71,8 +72,9 @@ def delete_entry(entry_id: int, user: dict = Depends(get_current_user)):
     conn.close()
     return {"message": "Deleted"}
 
-@router.post("/{entry_id}/organize", response_model=DiaryResponse)
+@router.post("/{entry_id}/organize")
 async def organize_entry(entry_id: int, user: dict = Depends(get_current_user)):
+    """Generate 3 AI versions and return them (not saved yet)"""
     conn = get_db()
     entry = conn.execute("SELECT * FROM diary_entries WHERE id = ? AND user_id = ?", (entry_id, user["id"])).fetchone()
     if not entry:
@@ -84,13 +86,43 @@ async def organize_entry(entry_id: int, user: dict = Depends(get_current_user)):
     api_key = settings["api_key"] if settings else None
     
     try:
-        organized = await reorganize_diary(entry["raw_content"], api_key, provider)
-        conn.execute("UPDATE diary_entries SET organized_content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (organized, entry_id))
+        versions = await reorganize_diary_variants(entry["raw_content"], api_key, provider)
+        # Store all versions as JSON
+        versions_json = json.dumps(versions)
+        conn.execute("UPDATE diary_entries SET organized_versions = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (versions_json, entry_id))
         conn.commit()
     except Exception as e:
         conn.close()
         raise HTTPException(500, f"AI error: {str(e)}")
     
+    entry = conn.execute("SELECT * FROM diary_entries WHERE id = ?", (entry_id,)).fetchone()
+    conn.close()
+    return DiaryResponse(**dict(entry))
+
+@router.post("/{entry_id}/select-version", response_model=DiaryResponse)
+def select_version(entry_id: int, data: DiarySelectVersion, user: dict = Depends(get_current_user)):
+    """Select a version (0-2 for AI, -1 for original) and save it"""
+    conn = get_db()
+    entry = conn.execute("SELECT * FROM diary_entries WHERE id = ? AND user_id = ?", (entry_id, user["id"])).fetchone()
+    if not entry:
+        conn.close()
+        raise HTTPException(404, "Entry not found")
+    
+    if data.version_index == -1:
+        # Keep original — clear organized content
+        conn.execute("UPDATE diary_entries SET organized_content = NULL, organized_versions = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (entry_id,))
+    else:
+        versions = json.loads(entry["organized_versions"] or "[]")
+        if data.version_index < 0 or data.version_index >= len(versions):
+            conn.close()
+            raise HTTPException(400, "Invalid version index")
+        selected = versions[data.version_index]
+        if not selected:
+            conn.close()
+            raise HTTPException(400, "That version failed to generate")
+        conn.execute("UPDATE diary_entries SET organized_content = ?, organized_versions = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (selected, entry_id))
+    
+    conn.commit()
     entry = conn.execute("SELECT * FROM diary_entries WHERE id = ?", (entry_id,)).fetchone()
     conn.close()
     return DiaryResponse(**dict(entry))
