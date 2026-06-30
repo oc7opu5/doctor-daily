@@ -19,11 +19,19 @@ const TX_TYPES = [
   { value: 'transfer', label: 'Transfer', color: 'text-cyan-400' },
 ]
 
+const CURRENCIES = [
+  { value: 'BDT', label: '৳ BDT', symbol: '৳' },
+  { value: 'USD', label: '$ USD', symbol: '$' },
+  { value: 'CAD', label: 'C$ CAD', symbol: 'C$' },
+]
+
+const getSymbol = (currency) => CURRENCIES.find(c => c.value === currency)?.symbol || currency + ' '
+
 export default function Finance() {
   const [transactions, setTransactions] = useState([])
   const [summary, setSummary] = useState(null)
   const [showNew, setShowNew] = useState(false)
-  const [form, setForm] = useState({ raw_description: '', amount: '', tx_type: '', transaction_date: '' })
+  const [form, setForm] = useState({ raw_description: '', amount: '', currency: 'BDT', tx_type: '', transaction_date: '' })
   const [loading, setLoading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [analysis, setAnalysis] = useState('')
@@ -47,14 +55,14 @@ export default function Finance() {
       const data = {
         raw_description: form.raw_description,
         amount: parseFloat(form.amount),
+        currency: form.currency,
         transaction_date: form.transaction_date || null,
       }
-      // Only send tx_type if user selected one (empty string = let AI decide)
       if (form.tx_type) data.tx_type = form.tx_type
       
       const tx = await createTransaction(data)
       setTransactions([tx, ...transactions])
-      setForm({ raw_description: '', amount: '', tx_type: '', transaction_date: '' })
+      setForm({ raw_description: '', amount: '', currency: 'BDT', tx_type: '', transaction_date: '' })
       setShowNew(false)
       reload()
     } catch (err) {
@@ -80,6 +88,7 @@ export default function Finance() {
     setEditForm({
       raw_description: tx.raw_description,
       amount: tx.amount,
+      currency: tx.currency || 'BDT',
       tx_type: tx.tx_type,
       organized_category: tx.organized_category || '',
       transaction_date: tx.transaction_date || '',
@@ -102,11 +111,12 @@ export default function Finance() {
 
   const handleAnalyze = async () => {
     setAnalyzing(true)
+    setAnalysis('')
     try {
       const res = await analyzeFinance()
       setAnalysis(res.analysis)
     } catch (err) {
-      alert(err.message)
+      alert('Analysis failed: ' + err.message)
     } finally {
       setAnalyzing(false)
     }
@@ -115,12 +125,13 @@ export default function Finance() {
   const handleAskAdvice = async () => {
     if (!adviceQ.trim()) return
     setAskingAdvice(true)
+    setAdvice('')
     try {
       const res = await askFinanceAdvice(adviceQ)
       setAdvice(res.advice)
       setAdviceQ('')
     } catch (err) {
-      alert(err.message)
+      alert('Advisor failed: ' + err.message)
     } finally {
       setAskingAdvice(false)
     }
@@ -128,6 +139,9 @@ export default function Finance() {
 
   const getTxLabel = (type) => TX_TYPES.find(t => t.value === type)?.label || type
   const getTxColor = (type) => TX_TYPES.find(t => t.value === type)?.color || 'text-dark-400'
+
+  // Group summary by currency
+  const currencySummary = summary?.by_currency || {}
 
   return (
     <div className="max-w-5xl mx-auto space-y-5 md:space-y-6">
@@ -141,25 +155,33 @@ export default function Finance() {
         </button>
       </div>
 
-      {/* Summary Cards */}
-      {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          <div className="bg-dark-900 rounded-xl p-3 md:p-4 border border-dark-700">
-            <p className="text-dark-400 text-xs md:text-sm">Income</p>
-            <p className="text-lg md:text-xl font-bold text-green-400">${summary.total_income.toFixed(2)}</p>
-          </div>
-          <div className="bg-dark-900 rounded-xl p-3 md:p-4 border border-dark-700">
-            <p className="text-dark-400 text-xs md:text-sm">Expenses</p>
-            <p className="text-lg md:text-xl font-bold text-red-400">${summary.total_expense.toFixed(2)}</p>
-          </div>
-          <div className="bg-dark-900 rounded-xl p-3 md:p-4 border border-dark-700">
-            <p className="text-dark-400 text-xs md:text-sm">Balance</p>
-            <p className={`text-lg md:text-xl font-bold ${summary.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>${summary.balance.toFixed(2)}</p>
-          </div>
-          <div className="bg-dark-900 rounded-xl p-3 md:p-4 border border-dark-700">
-            <p className="text-dark-400 text-xs md:text-sm">Transactions</p>
-            <p className="text-lg md:text-xl font-bold text-white">{summary.transaction_count}</p>
-          </div>
+      {/* Summary Cards — grouped by currency */}
+      {summary && Object.keys(currencySummary).length > 0 && (
+        <div className="space-y-3">
+          {Object.entries(currencySummary).map(([cur, data]) => (
+            <div key={cur} className="bg-dark-900 rounded-xl p-4 border border-dark-700">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-semibold text-white">{getSymbol(cur)} {cur}</span>
+                <span className="text-xs text-dark-400">({data.count} transactions)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <p className="text-dark-400 text-xs">Income</p>
+                  <p className="text-lg font-bold text-green-400">{getSymbol(cur)}{data.income.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-dark-400 text-xs">Expenses</p>
+                  <p className="text-lg font-bold text-red-400">{getSymbol(cur)}{data.expense.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-dark-400 text-xs">Balance</p>
+                  <p className={`text-lg font-bold ${data.income - data.expense >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {getSymbol(cur)}{(data.income - data.expense).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -167,7 +189,7 @@ export default function Finance() {
       <div className="bg-dark-900 rounded-xl p-4 md:p-6 border border-dark-700">
         <div className="flex items-center justify-between mb-4 gap-3">
           <h2 className="text-base md:text-lg font-semibold text-white flex items-center gap-2">
-            <Sparkles className="text-brand-400 shrink-0" size={18} /> <span className="hidden sm:inline">AI Financial Analysis</span><span className="sm:hidden">AI Analysis</span>
+            <Sparkles className="text-brand-400 shrink-0" size={18} /> AI Analysis
           </h2>
           <button onClick={handleAnalyze} disabled={analyzing || transactions.length === 0}
             className="px-3 md:px-4 py-2 bg-brand-600/20 text-brand-400 hover:bg-brand-600/30 rounded-lg text-xs md:text-sm transition-colors disabled:opacity-50 shrink-0">
@@ -177,7 +199,7 @@ export default function Finance() {
         {analysis ? (
           <div className="ai-content text-sm md:text-base"><ReactMarkdown>{analysis}</ReactMarkdown></div>
         ) : (
-          <p className="text-dark-400 text-sm">Add transactions and click "Analyze" to get AI insights.</p>
+          <p className="text-dark-400 text-sm">{analyzing ? '⏳ AI is analyzing your spending... this may take a moment on free models.' : 'Add transactions and click "Analyze" to get AI insights.'}</p>
         )}
       </div>
 
@@ -196,7 +218,11 @@ export default function Finance() {
             {askingAdvice ? '...' : 'Ask'}
           </button>
         </div>
-        {advice && <div className="mt-4 ai-content text-sm md:text-base"><ReactMarkdown>{advice}</ReactMarkdown></div>}
+        {advice ? (
+          <div className="mt-4 ai-content text-sm md:text-base"><ReactMarkdown>{advice}</ReactMarkdown></div>
+        ) : (
+          askingAdvice && <p className="mt-3 text-dark-400 text-sm">⏳ AI advisor is thinking... this may take a moment on free models.</p>
+        )}
       </div>
 
       {/* New Transaction Modal */}
@@ -214,15 +240,19 @@ export default function Finance() {
               <input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })}
                 placeholder="Amount" step="0.01"
                 className="flex-1 min-w-0 px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none" />
-              <select value={form.tx_type} onChange={e => setForm({ ...form, tx_type: e.target.value })}
-                className="px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none">
-                <option value="">AI decides</option>
-                {TX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              <select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}
+                className="px-3 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none">
+                {CURRENCIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
+            <select value={form.tx_type} onChange={e => setForm({ ...form, tx_type: e.target.value })}
+              className="w-full px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none">
+              <option value="">AI decides type</option>
+              {TX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
             <input type="date" value={form.transaction_date} onChange={e => setForm({ ...form, transaction_date: e.target.value })}
               className="w-full px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none" />
-            <p className="text-xs text-dark-500">Leave type as "AI decides" — the AI will auto-categorize based on your description.</p>
+            <p className="text-xs text-dark-500">AI will auto-categorize based on your description.</p>
             <button onClick={handleCreate} disabled={loading || !form.raw_description.trim() || !form.amount}
               className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 font-medium">
               {loading ? 'Saving...' : 'Save Transaction'}
@@ -246,11 +276,15 @@ export default function Finance() {
               <input type="number" value={editForm.amount} onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
                 placeholder="Amount" step="0.01"
                 className="flex-1 min-w-0 px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none" />
-              <select value={editForm.tx_type} onChange={e => setEditForm({ ...editForm, tx_type: e.target.value })}
-                className="px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none">
-                {TX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              <select value={editForm.currency} onChange={e => setEditForm({ ...editForm, currency: e.target.value })}
+                className="px-3 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none">
+                {CURRENCIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
+            <select value={editForm.tx_type} onChange={e => setEditForm({ ...editForm, tx_type: e.target.value })}
+              className="w-full px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none">
+              {TX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
             <select value={editForm.organized_category} onChange={e => setEditForm({ ...editForm, organized_category: e.target.value })}
               className="w-full px-4 py-2.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:border-brand-500 focus:outline-none">
               <option value="">Select category</option>
@@ -277,41 +311,30 @@ export default function Finance() {
           <div className="divide-y divide-dark-700">
             {transactions.map(tx => (
               <div key={tx.id} className="p-3 md:p-4 hover:bg-dark-800 active:bg-dark-700 transition-colors">
-                {editingTx === tx.id ? (
-                  /* Inline edit view */
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-dark-400">
-                      <span className="text-brand-400">Editing</span>
-                    </div>
-                  </div>
-                ) : (
-                  /* Normal view */
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm truncate">{tx.raw_description}</p>
-                      <div className="flex flex-wrap items-center gap-2 mt-1 text-xs">
-                        <span className="text-dark-400">{tx.transaction_date || 'No date'}</span>
-                        {tx.organized_category && (
-                          <span className="px-2 py-0.5 bg-dark-700 text-dark-300 rounded-full">{tx.organized_category}</span>
-                        )}
-                        <span className={`px-2 py-0.5 bg-dark-700 rounded-full ${getTxColor(tx.tx_type)}`}>
-                          {getTxLabel(tx.tx_type)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`font-semibold text-sm ${tx.tx_type === 'income' || tx.tx_type === 'loan_received' ? 'text-green-400' : 'text-red-400'}`}>
-                        {tx.tx_type === 'income' || tx.tx_type === 'loan_received' ? '+' : '-'}${tx.amount.toFixed(2)}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm truncate">{tx.raw_description}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1 text-xs">
+                      <span className="text-dark-400">{tx.transaction_date || 'No date'}</span>
+                      <span className="text-dark-500">•</span>
+                      <span className="text-dark-300">{getSymbol(tx.currency || 'BDT')}{tx.amount.toFixed(2)}</span>
+                      {tx.organized_category && (
+                        <span className="px-2 py-0.5 bg-dark-700 text-dark-300 rounded-full">{tx.organized_category}</span>
+                      )}
+                      <span className={`px-2 py-0.5 bg-dark-700 rounded-full ${getTxColor(tx.tx_type)}`}>
+                        {getTxLabel(tx.tx_type)}
                       </span>
-                      <button onClick={() => startEdit(tx)} className="text-dark-500 hover:text-brand-400 transition-colors p-1">
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => handleDelete(tx.id)} className="text-dark-500 hover:text-red-400 transition-colors p-1">
-                        <Trash2 size={14} />
-                      </button>
                     </div>
                   </div>
-                )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => startEdit(tx)} className="text-dark-500 hover:text-brand-400 transition-colors p-1.5">
+                      <Pencil size={14} />
+                    </button>
+                    <button onClick={() => handleDelete(tx.id)} className="text-dark-500 hover:text-red-400 transition-colors p-1.5">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>

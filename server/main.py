@@ -4,13 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from .database import init_db, get_db
+from .database import init_db, migrate_db
 from .routes.auth import router as auth_router
 from .routes.diary import router as diary_router
 from .routes.finance import router as finance_router
 from .routes.settings import router as settings_router
 
-app = FastAPI(title="Doctor Daily", version="1.1.0")
+app = FastAPI(title="Doctor Daily", version="1.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,22 +41,7 @@ if FRONTEND_DIR.exists():
 def startup():
     init_db()
     migrate_db()
-    print("Doctor Daily v1.1 is running!")
-
-def migrate_db():
-    """Add new columns to existing databases"""
-    conn = get_db()
-    try:
-        # Check if organized_versions column exists
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(diary_entries)").fetchall()]
-        if "organized_versions" not in cols:
-            conn.execute("ALTER TABLE diary_entries ADD COLUMN organized_versions TEXT")
-            conn.commit()
-            print("Migration: Added organized_versions column")
-    except Exception as e:
-        print(f"Migration note: {e}")
-    finally:
-        conn.close()
+    print("Doctor Daily v1.2 is running!")
 
 if __name__ == "__main__":
     import uvicorn

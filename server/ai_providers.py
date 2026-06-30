@@ -94,7 +94,8 @@ async def call_ai(provider: str, api_key: Optional[str], messages: list, purpose
         }
         url = f"{config['base_url']}/chat/completions"
     
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    # Free models can be slow — 120s timeout
+    async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
@@ -175,17 +176,18 @@ extract ALL financial transactions (expenses, income, purchases, payments, loans
 
 Rules:
 - Extract EVERY transaction mentioned, no matter how small
-- Use the SAME currency as mentioned in the text (taka, USD, BDT, etc.)
-- If no currency is mentioned, assume local currency
+- Detect the currency from the text: taka/BDT = "BDT", dollar/USD = "USD", CAD = "CAD"
+- If no currency is mentioned, default to "BDT"
 - For each transaction, provide:
   - description: A clear short description of what was spent/received
-  - amount: The exact numeric amount
+  - amount: The exact numeric amount (just the number)
+  - currency: "BDT", "USD", or "CAD" (whichever was mentioned)
   - tx_type: "expense", "income", "loan_given", "loan_received", "savings", or "transfer"
   - category: One of: Food & Dining, Transportation, Bills & Utilities, Entertainment, Shopping, Health & Medical, Education, Salary & Wages, Freelance & Side Income, Investment, Loan Given, Loan Received, Savings, Transfer, Gift, Other
   - transaction_date: The date if mentioned, otherwise null
 
 Reply ONLY with a JSON array like:
-[{"description":"Rickshaw to office","amount":50,"tx_type":"expense","category":"Transportation","transaction_date":"2026-06-30"}]
+[{"description":"Rickshaw to office","amount":50,"currency":"BDT","tx_type":"expense","category":"Transportation","transaction_date":"2026-06-30"}]
 
 If NO financial transactions are found, reply with: []
 Just the JSON array, nothing else."""

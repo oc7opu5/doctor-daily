@@ -41,7 +41,7 @@ export const updateTransaction = (id, data) => request(`/finance/${id}`, { metho
 export const deleteTransaction = (id) => request(`/finance/${id}`, { method: 'DELETE' });
 export const getFinanceSummary = () => request('/finance/summary');
 export const analyzeFinance = () => request('/finance/analyze', { method: 'POST' });
-export const askFinanceAdvice = (question) => request(`/finance/advice?question=${encodeURIComponent(question)}`, { method: 'POST' });
+export const askFinanceAdvice = (question) => request('/finance/advice', { method: 'POST', body: JSON.stringify({ question }) });
 
 // Settings
 export const getSettings = () => request('/settings');

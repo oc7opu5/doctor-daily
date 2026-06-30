@@ -1,11 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from fastapi import APIRouter, HTTPException, Depends, Query
+from typing import List, Optional
+from pydantic import BaseModel
 from ..database import get_db
 from ..models import TransactionCreate, TransactionUpdate, TransactionResponse
 from ..auth import get_current_user
 from ..ai_providers import analyze_finance, get_financial_advice, categorize_transaction
 
 router = APIRouter(prefix="/api/finance", tags=["finance"])
+
+class AdviceRequest(BaseModel):
+    question: str
 
 @router.get("", response_model=List[TransactionResponse])
 def list_transactions(user: dict = Depends(get_current_user)):
@@ -26,9 +30,9 @@ async def create_transaction(data: TransactionCreate, user: dict = Depends(get_c
     # Auto-categorize with AI if tx_type not specified
     tx_type = data.tx_type
     category = None
+    currency = data.currency or "BDT"
     
     if tx_type is None:
-        # Let AI decide the type and category
         try:
             result = await categorize_transaction(data.raw_description, data.amount, api_key, provider)
             tx_type = result.get("tx_type", "expense")
@@ -37,7 +41,6 @@ async def create_transaction(data: TransactionCreate, user: dict = Depends(get_c
             tx_type = "expense"
             category = "Other"
     else:
-        # User specified type, still categorize
         try:
             result = await categorize_transaction(data.raw_description, data.amount, api_key, provider)
             category = result.get("category", "Other")
@@ -45,8 +48,8 @@ async def create_transaction(data: TransactionCreate, user: dict = Depends(get_c
             category = "Other"
     
     cur = conn.execute(
-        "INSERT INTO finance_transactions (user_id, raw_description, amount, tx_type, organized_category, transaction_date) VALUES (?, ?, ?, ?, ?, ?)",
-        (user["id"], data.raw_description, data.amount, tx_type, category, data.transaction_date)
+        "INSERT INTO finance_transactions (user_id, raw_description, amount, currency, tx_type, organized_category, transaction_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user["id"], data.raw_description, data.amount, currency, tx_type, category, data.transaction_date)
     )
     tx_id = cur.lastrowid
     conn.commit()
@@ -67,6 +70,8 @@ def update_transaction(tx_id: int, data: TransactionUpdate, user: dict = Depends
         updates["raw_description"] = data.raw_description
     if data.amount is not None:
         updates["amount"] = data.amount
+    if data.currency is not None:
+        updates["currency"] = data.currency
     if data.tx_type is not None:
         updates["tx_type"] = data.tx_type
     if data.organized_category is not None:
@@ -102,6 +107,19 @@ def get_summary(user: dict = Depends(get_current_user)):
     rows = conn.execute("SELECT * FROM finance_transactions WHERE user_id = ? ORDER BY transaction_date DESC", (user["id"],)).fetchall()
     conn.close()
     
+    # Group by currency
+    by_currency = {}
+    for r in rows:
+        cur = r["currency"] or "BDT"
+        if cur not in by_currency:
+            by_currency[cur] = {"income": 0, "expense": 0, "count": 0}
+        by_currency[cur]["count"] += 1
+        if r["tx_type"] in ("expense", "loan_given"):
+            by_currency[cur]["expense"] += r["amount"]
+        elif r["tx_type"] in ("income", "loan_received"):
+            by_currency[cur]["income"] += r["amount"]
+    
+    # Also compute totals across all currencies (for backwards compat)
     total_expense = sum(r["amount"] for r in rows if r["tx_type"] in ("expense", "loan_given"))
     total_income = sum(r["amount"] for r in rows if r["tx_type"] in ("income", "loan_received"))
     
@@ -118,6 +136,7 @@ def get_summary(user: dict = Depends(get_current_user)):
         "balance": total_income - total_expense,
         "transaction_count": len(rows),
         "categories": categories,
+        "by_currency": by_currency,
     }
 
 @router.post("/analyze")
@@ -130,7 +149,7 @@ async def analyze_spending(user: dict = Depends(get_current_user)):
         raise HTTPException(400, "No transactions to analyze")
     
     tx_text = "\n".join([
-        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — ${r['amount']:.2f} ({r['tx_type']}) [{r['organized_category'] or 'Uncategorized'}]"
+        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — {r['currency'] or 'BDT'} {r['amount']:.2f} ({r['tx_type']}) [{r['organized_category'] or 'Uncategorized'}]"
         for r in rows
     ])
     
@@ -144,17 +163,17 @@ async def analyze_spending(user: dict = Depends(get_current_user)):
         analysis = await analyze_finance(tx_text, api_key, provider)
         return {"analysis": analysis}
     except Exception as e:
-        raise HTTPException(500, f"AI error: {str(e)}")
+        raise HTTPException(500, f"AI analysis failed: {str(e)}")
 
 @router.post("/advice")
-async def ask_advice(question: str, user: dict = Depends(get_current_user)):
+async def ask_advice(body: AdviceRequest, user: dict = Depends(get_current_user)):
     conn = get_db()
     rows = conn.execute("SELECT * FROM finance_transactions WHERE user_id = ? ORDER BY transaction_date DESC LIMIT 50", (user["id"],)).fetchall()
     settings = conn.execute("SELECT * FROM user_settings WHERE user_id = ?", (user["id"],)).fetchone()
     conn.close()
     
     context = "\n".join([
-        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — ${r['amount']:.2f} ({r['tx_type']}) [{r['organized_category'] or 'Uncategorized'}]"
+        f"- {r['transaction_date'] or 'No date'}: {r['raw_description']} — {r['currency'] or 'BDT'} {r['amount']:.2f} ({r['tx_type']}) [{r['organized_category'] or 'Uncategorized'}]"
         for r in rows
     ]) if rows else "No transactions yet"
     
@@ -162,7 +181,7 @@ async def ask_advice(question: str, user: dict = Depends(get_current_user)):
     api_key = settings["api_key"] if settings else None
     
     try:
-        advice = await get_financial_advice(question, context, api_key, provider)
+        advice = await get_financial_advice(body.question, context, api_key, provider)
         return {"advice": advice}
     except Exception as e:
-        raise HTTPException(500, f"AI error: {str(e)}")
+        raise HTTPException(500, f"AI advisor failed: {str(e)}")

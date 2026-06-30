@@ -49,12 +49,14 @@ class DiarySelectVersion(BaseModel):
 class TransactionCreate(BaseModel):
     raw_description: str
     amount: float
+    currency: Optional[str] = "BDT"
     tx_type: Optional[str] = None  # None = let AI decide
     transaction_date: Optional[str] = None
 
 class TransactionUpdate(BaseModel):
     raw_description: Optional[str] = None
     amount: Optional[float] = None
+    currency: Optional[str] = None
     tx_type: Optional[str] = None
     organized_category: Optional[str] = None
     transaction_date: Optional[str] = None
@@ -63,6 +65,7 @@ class TransactionResponse(BaseModel):
     id: int
     raw_description: str
     amount: float
+    currency: str = "BDT"
     tx_type: str
     organized_category: Optional[str] = None
     ai_advice: Optional[str] = None
@@ -73,7 +76,9 @@ class TransactionResponse(BaseModel):
 class SettingsUpdate(BaseModel):
     ai_provider: Optional[str] = None
     api_key: Optional[str] = None
+    default_currency: Optional[str] = None
 
 class SettingsResponse(BaseModel):
     ai_provider: str
     api_key_set: bool
+    default_currency: str = "BDT"

@@ -27,6 +27,7 @@ def init_db():
         user_id INTEGER PRIMARY KEY,
         ai_provider TEXT DEFAULT 'opencode',
         api_key TEXT,
+        default_currency TEXT DEFAULT 'BDT',
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -47,6 +48,7 @@ def init_db():
         user_id INTEGER NOT NULL,
         raw_description TEXT NOT NULL,
         amount REAL NOT NULL,
+        currency TEXT DEFAULT 'BDT',
         tx_type TEXT DEFAULT 'expense',
         organized_category TEXT,
         ai_advice TEXT,
@@ -57,3 +59,32 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+
+def migrate_db():
+    """Add new columns to existing databases"""
+    conn = get_db()
+    try:
+        # Check diary_entries columns
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(diary_entries)").fetchall()]
+        if "organized_versions" not in cols:
+            conn.execute("ALTER TABLE diary_entries ADD COLUMN organized_versions TEXT")
+            conn.commit()
+            print("Migration: Added organized_versions column")
+        
+        # Check finance_transactions columns
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(finance_transactions)").fetchall()]
+        if "currency" not in cols:
+            conn.execute("ALTER TABLE finance_transactions ADD COLUMN currency TEXT DEFAULT 'BDT'")
+            conn.commit()
+            print("Migration: Added currency column")
+        
+        # Check user_settings columns
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(user_settings)").fetchall()]
+        if "default_currency" not in cols:
+            conn.execute("ALTER TABLE user_settings ADD COLUMN default_currency TEXT DEFAULT 'BDT'")
+            conn.commit()
+            print("Migration: Added default_currency column")
+    except Exception as e:
+        print(f"Migration note: {e}")
+    finally:
+        conn.close()

@@ -149,17 +149,18 @@ async def extract_transactions(entry_id: int, user: dict = Depends(get_current_u
         for tx in transactions:
             try:
                 cur = conn.execute(
-                    "INSERT INTO finance_transactions (user_id, raw_description, amount, tx_type, organized_category, transaction_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO finance_transactions (user_id, raw_description, amount, currency, tx_type, organized_category, transaction_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         user["id"],
                         tx.get("description", "Unknown"),
                         float(tx.get("amount", 0)),
+                        tx.get("currency", "BDT"),
                         tx.get("tx_type", "expense"),
                         tx.get("category", "Other"),
                         tx.get("transaction_date"),
                     )
                 )
-                saved.append({"id": cur.lastrowid, "description": tx.get("description"), "amount": tx.get("amount")})
+                saved.append({"id": cur.lastrowid, "description": tx.get("description"), "amount": tx.get("amount"), "currency": tx.get("currency", "BDT")})
             except Exception:
                 continue
         
