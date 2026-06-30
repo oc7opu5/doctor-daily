@@ -168,3 +168,43 @@ async def get_financial_advice(question: str, context: str, api_key: Optional[st
         {"role": "user", "content": f"Context:\n{context}\n\nMy question:\n{question}"},
     ]
     return await call_ai(provider, api_key, messages, "advice")
+
+
+EXTRACT_TRANSACTIONS_SYSTEM = """You are a financial data extractor. Given a diary entry or any text, 
+extract ALL financial transactions (expenses, income, purchases, payments, loans, etc.).
+
+Rules:
+- Extract EVERY transaction mentioned, no matter how small
+- Use the SAME currency as mentioned in the text (taka, USD, BDT, etc.)
+- If no currency is mentioned, assume local currency
+- For each transaction, provide:
+  - description: A clear short description of what was spent/received
+  - amount: The exact numeric amount
+  - tx_type: "expense", "income", "loan_given", "loan_received", "savings", or "transfer"
+  - category: One of: Food & Dining, Transportation, Bills & Utilities, Entertainment, Shopping, Health & Medical, Education, Salary & Wages, Freelance & Side Income, Investment, Loan Given, Loan Received, Savings, Transfer, Gift, Other
+  - transaction_date: The date if mentioned, otherwise null
+
+Reply ONLY with a JSON array like:
+[{"description":"Rickshaw to office","amount":50,"tx_type":"expense","category":"Transportation","transaction_date":"2026-06-30"}]
+
+If NO financial transactions are found, reply with: []
+Just the JSON array, nothing else."""
+
+
+async def extract_transactions_from_text(text: str, api_key: Optional[str], provider: str = "opencode") -> list:
+    """Extract financial transactions from diary or any text"""
+    messages = [
+        {"role": "system", "content": EXTRACT_TRANSACTIONS_SYSTEM},
+        {"role": "user", "content": f"Extract all transactions from this text:\n\n{text}"},
+    ]
+    try:
+        result = await call_ai(provider, api_key, messages, "extract", temperature=0.2)
+        result = result.strip()
+        if result.startswith("```"):
+            result = result.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        parsed = json.loads(result)
+        if isinstance(parsed, list):
+            return parsed
+        return []
+    except Exception:
+        return []

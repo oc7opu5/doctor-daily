@@ -32,6 +32,7 @@ export const updateDiary = (id, data) => request(`/diary/${id}`, { method: 'PUT'
 export const deleteDiary = (id) => request(`/diary/${id}`, { method: 'DELETE' });
 export const organizeDiary = (id) => request(`/diary/${id}/organize`, { method: 'POST' });
 export const selectDiaryVersion = (id, versionIndex) => request(`/diary/${id}/select-version`, { method: 'POST', body: JSON.stringify({ version_index: versionIndex }) });
+export const extractDiaryTransactions = (id) => request(`/diary/${id}/extract-transactions`, { method: 'POST' });
 
 // Finance
 export const listTransactions = () => request('/finance');

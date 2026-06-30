@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, Sparkles, Trash2, X, BookOpen, Check, RotateCcw, Pencil } from 'lucide-react'
+import { Plus, Sparkles, Trash2, X, BookOpen, Check, RotateCcw, Pencil, ArrowRightFromLine } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { listDiary, createDiary, deleteDiary, organizeDiary, selectDiaryVersion, updateDiary } from '../api/service'
+import { listDiary, createDiary, deleteDiary, organizeDiary, selectDiaryVersion, updateDiary, extractDiaryTransactions } from '../api/service'
 
 export default function Diary() {
   const [entries, setEntries] = useState([])
@@ -15,6 +15,7 @@ export default function Diary() {
   const [selectedVersion, setSelectedVersion] = useState(null)
   const [editing, setEditing] = useState(null) // 'raw' | 'organized' | null
   const [editContent, setEditContent] = useState('')
+  const [extracting, setExtracting] = useState(false)
 
   useEffect(() => { listDiary().then(setEntries).catch(() => {}) }, [])
 
@@ -86,6 +87,22 @@ export default function Diary() {
       if (viewEntry?.id === id) { setViewEntry(null); setVersions(null) }
     } catch (err) {
       alert(err.message)
+    }
+  }
+
+  const handleExtract = async (id) => {
+    setExtracting(true)
+    try {
+      const res = await extractDiaryTransactions(id)
+      if (res.transactions_saved.length > 0) {
+        alert(`✅ Extracted ${res.transactions_saved.length} transaction(s) to Finance!\n\n${res.transactions_saved.map(t => `• ${t.description}: $${t.amount}`).join('\n')}`)
+      } else {
+        alert('No financial transactions found in this entry.')
+      }
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setExtracting(false)
     }
   }
 
@@ -303,6 +320,14 @@ export default function Diary() {
                 >
                   <Sparkles size={16} />
                   {organizingId === viewEntry.id ? 'Generating 3 versions...' : viewEntry.organized_content ? 'Re-generate options' : 'AI Organize'}
+                </button>
+                <button
+                  onClick={() => handleExtract(viewEntry.id)}
+                  disabled={extracting}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded-lg transition-colors text-sm disabled:opacity-50"
+                >
+                  <ArrowRightFromLine size={16} />
+                  {extracting ? 'Extracting...' : 'Extract to Finance'}
                 </button>
                 <button
                   onClick={() => handleDelete(viewEntry.id)}

@@ -4,7 +4,7 @@ import json
 from ..database import get_db
 from ..models import DiaryCreate, DiaryUpdate, DiaryResponse, DiarySelectVersion
 from ..auth import get_current_user
-from ..ai_providers import reorganize_diary, reorganize_diary_variants
+from ..ai_providers import reorganize_diary, reorganize_diary_variants, extract_transactions_from_text
 
 router = APIRouter(prefix="/api/diary", tags=["diary"])
 
@@ -126,3 +126,46 @@ def select_version(entry_id: int, data: DiarySelectVersion, user: dict = Depends
     entry = conn.execute("SELECT * FROM diary_entries WHERE id = ?", (entry_id,)).fetchone()
     conn.close()
     return DiaryResponse(**dict(entry))
+
+@router.post("/{entry_id}/extract-transactions")
+async def extract_transactions(entry_id: int, user: dict = Depends(get_current_user)):
+    """Extract financial transactions from a diary entry and save to finance"""
+    conn = get_db()
+    entry = conn.execute("SELECT * FROM diary_entries WHERE id = ? AND user_id = ?", (entry_id, user["id"])).fetchone()
+    if not entry:
+        conn.close()
+        raise HTTPException(404, "Entry not found")
+    
+    settings = conn.execute("SELECT * FROM user_settings WHERE user_id = ?", (user["id"],)).fetchone()
+    provider = settings["ai_provider"] if settings else "opencode"
+    api_key = settings["api_key"] if settings else None
+    
+    try:
+        # Use organized content if available, otherwise raw
+        text_to_analyze = entry["organized_content"] or entry["raw_content"]
+        transactions = await extract_transactions_from_text(text_to_analyze, api_key, provider)
+        
+        saved = []
+        for tx in transactions:
+            try:
+                cur = conn.execute(
+                    "INSERT INTO finance_transactions (user_id, raw_description, amount, tx_type, organized_category, transaction_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        user["id"],
+                        tx.get("description", "Unknown"),
+                        float(tx.get("amount", 0)),
+                        tx.get("tx_type", "expense"),
+                        tx.get("category", "Other"),
+                        tx.get("transaction_date"),
+                    )
+                )
+                saved.append({"id": cur.lastrowid, "description": tx.get("description"), "amount": tx.get("amount")})
+            except Exception:
+                continue
+        
+        conn.commit()
+        conn.close()
+        return {"transactions_found": len(transactions), "transactions_saved": saved}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(500, f"AI error: {str(e)}")
