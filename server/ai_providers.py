@@ -210,3 +210,24 @@ async def extract_transactions_from_text(text: str, api_key: Optional[str], prov
         return []
     except Exception:
         return []
+
+
+WEEKLY_SUMMARY_SYSTEM = """You are Doctor Daily, a personal life analyst. The user wants a weekly summary of their life.
+
+Based on their diary entries and financial transactions from the past week, write a warm, insightful weekly summary covering:
+
+1. **Life moments** — What happened this week? Key events, feelings, experiences.
+2. **Spending overview** — Total spent, where the money went, any patterns.
+3. **Mood & energy** — Based on diary content, how was their week emotionally?
+4. **One insight** — Something interesting you noticed (good or bad).
+5. **Next week tip** — One practical suggestion for the coming week.
+
+Write in a warm, human tone. Keep it concise but meaningful. Use the same language as the user. Format with markdown headings and bullet points."""
+
+
+async def generate_weekly_summary(diary_text: str, finance_text: str, api_key: Optional[str], provider: str = "opencode") -> str:
+    messages = [
+        {"role": "system", "content": WEEKLY_SUMMARY_SYSTEM},
+        {"role": "user", "content": f"This week's diary entries:\n{diary_text}\n\nThis week's transactions:\n{finance_text}\n\nWrite my weekly summary."},
+    ]
+    return await call_ai(provider, api_key, messages, "weekly", temperature=0.7)

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from ..database import get_db
 from ..models import TransactionCreate, TransactionUpdate, TransactionResponse
 from ..auth import get_current_user
-from ..ai_providers import analyze_finance, get_financial_advice, categorize_transaction
+from ..ai_providers import analyze_finance, get_financial_advice, categorize_transaction, generate_weekly_summary
 
 router = APIRouter(prefix="/api/finance", tags=["finance"])
 
@@ -185,3 +185,61 @@ async def ask_advice(body: AdviceRequest, user: dict = Depends(get_current_user)
         return {"advice": advice}
     except Exception as e:
         raise HTTPException(500, f"AI advisor failed: {str(e)}")
+
+@router.get("/search", response_model=List[TransactionResponse])
+def search_transactions(q: str = "", user: dict = Depends(get_current_user)):
+    conn = get_db()
+    if q.strip():
+        rows = conn.execute(
+            "SELECT * FROM finance_transactions WHERE user_id = ? AND (raw_description LIKE ? OR organized_category LIKE ?) ORDER BY created_at DESC",
+            (user["id"], f"%{q}%", f"%{q}%")
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM finance_transactions WHERE user_id = ? ORDER BY created_at DESC", (user["id"],)).fetchall()
+    conn.close()
+    return [TransactionResponse(**dict(r)) for r in rows]
+
+@router.get("/monthly")
+def monthly_data(user: dict = Depends(get_current_user)):
+    """Get last 6 months of income/expense data for charts"""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT strftime('%Y-%m', transaction_date) as month, 
+               SUM(CASE WHEN tx_type IN ('income','loan_received') THEN amount ELSE 0 END) as income,
+               SUM(CASE WHEN tx_type IN ('expense','loan_given') THEN amount ELSE 0 END) as expense
+        FROM finance_transactions 
+        WHERE user_id = ? AND transaction_date IS NOT NULL
+        GROUP BY month ORDER BY month DESC LIMIT 6
+    """, (user["id"],)).fetchall()
+    conn.close()
+    return [{"month": r["month"], "income": r["income"], "expense": r["expense"]} for r in reversed(rows)]
+
+@router.post("/weekly-summary")
+async def weekly_summary(user: dict = Depends(get_current_user)):
+    conn = get_db()
+    diary = conn.execute("""
+        SELECT raw_content FROM diary_entries 
+        WHERE user_id = ? AND created_at >= date('now', '-7 days')
+    """, (user["id"],)).fetchall()
+    finance = conn.execute("""
+        SELECT raw_description, amount, currency, tx_type, organized_category, transaction_date 
+        FROM finance_transactions 
+        WHERE user_id = ? AND transaction_date >= date('now', '-7 days')
+    """, (user["id"],)).fetchall()
+    settings = conn.execute("SELECT * FROM user_settings WHERE user_id = ?", (user["id"],)).fetchone()
+    conn.close()
+    
+    diary_text = "\n".join([f"- {r['raw_content'][:200]}" for r in diary]) or "No diary entries this week"
+    finance_text = "\n".join([
+        f"- {r['transaction_date']}: {r['raw_description']} — {r['currency']} {r['amount']:.2f} ({r['tx_type']}) [{r['organized_category']}]"
+        for r in finance
+    ]) or "No transactions this week"
+    
+    provider = settings["ai_provider"] if settings else "opencode"
+    api_key = settings["api_key"] if settings else None
+    
+    try:
+        summary = await generate_weekly_summary(diary_text, finance_text, api_key, provider)
+        return {"summary": summary}
+    except Exception as e:
+        raise HTTPException(500, f"AI error: {str(e)}")

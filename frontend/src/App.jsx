@@ -8,6 +8,7 @@ import Diary from './pages/Diary'
 import Finance from './pages/Finance'
 import Settings from './pages/Settings'
 import Sidebar, { MobileNav } from './components/Sidebar'
+import QuickAdd from './components/QuickAdd'
 
 export const AuthContext = createContext()
 
@@ -25,6 +26,7 @@ function ProtectedRoute({ children }) {
         {children}
       </main>
       <MobileNav />
+      <QuickAdd />
     </div>
   )
 }

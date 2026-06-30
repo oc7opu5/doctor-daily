@@ -170,3 +170,16 @@ async def extract_transactions(entry_id: int, user: dict = Depends(get_current_u
     except Exception as e:
         conn.close()
         raise HTTPException(500, f"AI error: {str(e)}")
+
+@router.get("/search", response_model=List[DiaryResponse])
+def search_entries(q: str = "", user: dict = Depends(get_current_user)):
+    conn = get_db()
+    if q.strip():
+        rows = conn.execute(
+            "SELECT * FROM diary_entries WHERE user_id = ? AND (raw_content LIKE ? OR organized_content LIKE ? OR mood LIKE ?) ORDER BY created_at DESC",
+            (user["id"], f"%{q}%", f"%{q}%", f"%{q}%")
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM diary_entries WHERE user_id = ? ORDER BY created_at DESC", (user["id"],)).fetchall()
+    conn.close()
+    return [DiaryResponse(**dict(r)) for r in rows]

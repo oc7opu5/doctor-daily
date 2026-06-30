@@ -56,35 +56,33 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS budgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        monthly_limit REAL NOT NULL,
+        currency TEXT DEFAULT 'BDT',
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     """)
     conn.commit()
     conn.close()
 
 def migrate_db():
-    """Add new columns to existing databases"""
     conn = get_db()
     try:
-        # Check diary_entries columns
         cols = [r[1] for r in conn.execute("PRAGMA table_info(diary_entries)").fetchall()]
         if "organized_versions" not in cols:
             conn.execute("ALTER TABLE diary_entries ADD COLUMN organized_versions TEXT")
-            conn.commit()
-            print("Migration: Added organized_versions column")
-        
-        # Check finance_transactions columns
         cols = [r[1] for r in conn.execute("PRAGMA table_info(finance_transactions)").fetchall()]
         if "currency" not in cols:
             conn.execute("ALTER TABLE finance_transactions ADD COLUMN currency TEXT DEFAULT 'BDT'")
-            conn.commit()
-            print("Migration: Added currency column")
-        
-        # Check user_settings columns
         cols = [r[1] for r in conn.execute("PRAGMA table_info(user_settings)").fetchall()]
         if "default_currency" not in cols:
             conn.execute("ALTER TABLE user_settings ADD COLUMN default_currency TEXT DEFAULT 'BDT'")
-            conn.commit()
-            print("Migration: Added default_currency column")
+        conn.commit()
     except Exception as e:
-        print(f"Migration note: {e}")
+        print(f"Migration: {e}")
     finally:
         conn.close()

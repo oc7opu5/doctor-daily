@@ -9,8 +9,10 @@ from .routes.auth import router as auth_router
 from .routes.diary import router as diary_router
 from .routes.finance import router as finance_router
 from .routes.settings import router as settings_router
+from .routes.budgets import router as budgets_router
+from .routes.export import router as export_router
 
-app = FastAPI(title="Doctor Daily", version="1.2.0")
+app = FastAPI(title="Doctor Daily", version="1.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,8 +26,9 @@ app.include_router(auth_router)
 app.include_router(diary_router)
 app.include_router(finance_router)
 app.include_router(settings_router)
+app.include_router(budgets_router)
+app.include_router(export_router)
 
-# Serve frontend in production
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
@@ -41,7 +44,7 @@ if FRONTEND_DIR.exists():
 def startup():
     init_db()
     migrate_db()
-    print("Doctor Daily v1.2 is running!")
+    print("Doctor Daily v1.3 is running!")
 
 if __name__ == "__main__":
     import uvicorn
