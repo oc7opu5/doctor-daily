@@ -11,7 +11,7 @@ PROVIDERS = {
     },
     "opencode": {
         "name": "OpenCode (Free)",
-        "base_url": "https://api.opencode-zen.com/v1",
+        "base_url": "https://opencode.ai/zen/v1",
         "default_model": "deepseek-v4-flash-free",
         "requires_key": False,
     },

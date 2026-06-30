@@ -7,7 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Diary from './pages/Diary'
 import Finance from './pages/Finance'
 import Settings from './pages/Settings'
-import Sidebar from './components/Sidebar'
+import Sidebar, { MobileNav } from './components/Sidebar'
 
 export const AuthContext = createContext()
 
@@ -21,7 +21,10 @@ function ProtectedRoute({ children }) {
   return (
     <div className="flex h-screen">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      <main className="flex-1 overflow-y-auto pb-20 md:pb-6 px-4 py-5 md:px-6 md:py-6">
+        {children}
+      </main>
+      <MobileNav />
     </div>
   )
 }

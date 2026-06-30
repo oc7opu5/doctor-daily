@@ -9,6 +9,7 @@ const links = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
+/* Desktop sidebar — hidden on mobile */
 export default function Sidebar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -19,7 +20,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 bg-dark-900 border-r border-dark-700 flex flex-col">
+    <aside className="hidden md:flex w-64 bg-dark-900 border-r border-dark-700 flex-col shrink-0">
       <div className="p-5 border-b border-dark-700">
         <h1 className="text-xl font-bold text-brand-400 flex items-center gap-2">
           🩺 Doctor Daily
@@ -58,5 +59,32 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+  )
+}
+
+/* Mobile bottom tab bar */
+export function MobileNav() {
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-dark-900 border-t border-dark-700 z-40 safe-area-bottom">
+      <div className="flex justify-around items-center h-14">
+        {links.map(({ to, icon: Icon, label }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={to === '/'}
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center gap-0.5 text-[10px] transition-colors w-full h-full ${
+                isActive
+                  ? 'text-brand-400 font-medium'
+                  : 'text-dark-400 active:text-dark-200'
+              }`
+            }
+          >
+            <Icon size={20} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+      </div>
+    </nav>
   )
 }
