@@ -82,3 +82,16 @@ class SettingsResponse(BaseModel):
     ai_provider: str
     api_key_set: bool
     default_currency: str = "BDT"
+
+# Budgets
+class BudgetCreate(BaseModel):
+    category: str
+    monthly_limit: float
+    currency: Optional[str] = "BDT"
+
+class BudgetResponse(BaseModel):
+    id: int
+    user_id: int
+    category: str
+    monthly_limit: float
+    currency: str = "BDT"
